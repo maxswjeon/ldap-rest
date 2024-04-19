@@ -11,10 +11,19 @@ ldap3 = "0.11.3"
 tokio = { version = "1", features = ["full"] }
 mini-redis = "0.4"
 hickory-client = "0.24.0"
-elliptic-curve = { version = "0.13.8", features = ["pkcs8", "pem"] }
-p521 = { version = "0.13.3", features = ["pkcs8", "pem"] }
-rand_chacha = "0.3.1"
-rand = "0.8.5"
-rand_core = "0.6.4"
 pretty_env_logger = "0.5.0"
 log = "0.4.21"
+pem-rfc7468 = { version = "0.7.0", features = ["alloc"] }
+pkcs1 = { version = "0.7.5", features = ["pem"] }
+rsa = "0.9.6"
+rasn = "0.14.0"
+elliptic-curve = "0.13.8"
+p521 = "0.13.3"
+p384 = "0.13.0"
+p256 = "0.13.2"
+bign256 = "0.13.1"
+k256 = "0.13.3"
+p192 = "0.13.0"
+p224 = "0.13.2"
+sm2 = "0.13.3"
+pkcs8 = "0.10.2"
