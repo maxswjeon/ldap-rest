@@ -1,85 +1,117 @@
 mod config;
 mod routes;
-mod types;
-
-use std::sync::Arc;
+mod utils;
 
 extern crate dotenv;
-extern crate pretty_env_logger;
-#[macro_use]
-extern crate log;
+
+use std::net::AddrParseError;
+use std::{io, net::SocketAddr};
+
+use axum_server::tls_rustls::RustlsConfig;
+use axum_server::Handle;
+use signal_hook::iterator::SignalsInfo;
+use signal_hook::{
+    consts::{SIGHUP, SIGUSR2},
+    iterator::Signals,
+};
+
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use axum::{
     routing::{get, post},
     Router,
 };
 
-use elliptic_curve::rand_core::SeedableRng;
-use p521::SecretKey;
-use pkcs8::{EncodePublicKey, LineEnding};
-use rand_chacha::ChaCha20Rng;
-use tokio::net::TcpListener;
+enum Error {
+    CreateSignalHandlerError(io::Error),
+    AddressParseError(AddrParseError),
+    CertificateError(config::LoadError),
+    ServerError(io::Error),
+}
+
+impl std::fmt::Debug for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::CreateSignalHandlerError(err) => {
+                utils::print_error(f, "Failed to create signal handler, exiting.", err)
+            }
+            Error::CertificateError(err) => {
+                utils::print_error(f, "Failed to load or create certificate, exiting.", err)
+            }
+            Error::AddressParseError(err) => {
+                utils::print_error(f, "Failed to parse address, exiting.", err)
+            }
+            Error::ServerError(err) => {
+                utils::print_error(f, "Error occurred while running server, exiting", err)
+            }
+        }
+    }
+}
 
 #[tokio::main]
-async fn main() -> Result<(), i8> {
-    tracing_subscriber::fmt::init();
-
+async fn main() -> Result<(), Error> {
     dotenv::dotenv().ok();
 
-    let mut rng = ChaCha20Rng::from_entropy();
-    let key_encrypt = SecretKey::random(&mut rng);
-    let key_encrypt_public = match key_encrypt.public_key().to_public_key_pem(LineEnding::LF) {
-        Ok(val) => val,
-        Err(err) => {
-            error!("Failed to encode public key: {}", err);
-            return Err(-1);
-        }
-    };
-
-    let authorized_keys_path =
-        dotenv::var("AUTHORIZED_KEYS").unwrap_or_else(|_| "./keys".to_string());
-
-    let authorized_keys = match config::load_public_keys(authorized_keys_path) {
-        Ok(val) => val,
-        Err(err) => match err {
-            config::LoadKeysError::CanonicalizeError(_path, err) => {
-                error!("Failed to canonicalize authorized keys path:{}", err);
-                return Err(-2);
-            }
-            config::LoadKeysError::ListDirError(_path, err) => {
-                error!("Failed to list contents of authorized keys folder: {}", err);
-                return Err(-3);
-            }
-        },
-    };
-
-    info!("Found {} authorized keys", authorized_keys.len());
-
-    if authorized_keys.is_empty() {
-        error!("No authorized keys found");
-        return Err(-5);
-    }
-
-    let context = Arc::new(routes::AppState {
-        key_private: key_encrypt,
-        key_public: key_encrypt_public,
-        authorized_keys,
-    });
-
-    let app = Router::new()
-        .route("/public", get(routes::public))
-        .route("/request", post(routes::request))
-        .with_state(context);
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "ldap_rest=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
     let host = dotenv::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = dotenv::var("PORT").unwrap_or_else(|_| "3000".to_string());
-    let addr = format!("{}:{}", host, port);
+    let addr: SocketAddr = match format!("{}:{}", host, port).to_string().parse() {
+        Ok(val) => val,
+        Err(err) => {
+            return Err(Error::AddressParseError(err));
+        }
+    };
 
-    let listener = TcpListener::bind(&addr).await.unwrap();
-    info!("Listening on {}", addr);
+    let conf = match config::load_or_create_cert().await {
+        Ok(val) => val,
+        Err(err) => {
+            return Err(Error::CertificateError(err));
+        }
+    };
 
-    let err = axum::serve(listener, app).await.unwrap_err();
-    error!("Server error: {}", err);
+    let signals = match Signals::new(&[SIGHUP, SIGUSR2]) {
+        Ok(val) => val,
+        Err(err) => {
+            return Err(Error::CreateSignalHandlerError(err));
+        }
+    };
 
-    Ok(())
+    let app = Router::new()
+        .route("/", get(routes::index))
+        .route("/request", post(routes::request));
+
+    let handle = Handle::new();
+
+    tokio::spawn(signal_handle(conf.clone(), signals));
+
+    let server = axum_server::bind_rustls(addr, conf);
+    tracing::info!("Listening on {}", addr);
+
+    match server.handle(handle).serve(app.into_make_service()).await {
+        Ok(_) => Ok(()),
+        Err(err) => Err(Error::ServerError(err)),
+    }
+}
+
+async fn signal_handle(config: RustlsConfig, mut signals: SignalsInfo) {
+    for sig in signals.forever() {
+        tracing::info!("Received signal {:?}", sig);
+        tracing::info!("Reloading certificates");
+        match config::load_or_create_cert().await {
+            Ok(val) => {
+                tracing::info!("Certificates reloaded");
+                config.reload_from_config(val.get_inner());
+            }
+            Err(err) => {
+                tracing::error!("Failed to reload certificates: {:?}", err);
+            }
+        };
+    }
 }

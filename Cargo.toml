@@ -28,7 +28,7 @@ p224 = "0.13.2"
 sm2 = "0.13.3"
 pkcs8 = "0.10.2"
 axum = "0.7.5"
-tracing-subscriber = "0.3.18"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 rand_chacha = "0.3.1"
 tower = "0.4.13"
 axum-macros = "0.4.1"
@@ -39,3 +39,7 @@ base64ct = "1.6.0"
 sha2 = "0.10.8"
 chrono = { version = "0.4.38", features = ["serde"] }
 ecdsa = "0.16.9"
+tracing = "0.1.40"
+rcgen = "0.13.1"
+signal-hook = "0.3.17"
+axum-server = { version = "0.6.0", features = ["rustls", "rustls-pemfile", "tls-rustls", "tokio-rustls"] }
