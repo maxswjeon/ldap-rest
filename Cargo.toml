@@ -11,35 +11,18 @@ ldap3 = "0.11.3"
 tokio = { version = "1", features = ["full"] }
 mini-redis = "0.4"
 hickory-client = "0.24.0"
-pretty_env_logger = "0.5.0"
-log = "0.4.21"
-pem-rfc7468 = { version = "0.7.0", features = ["alloc"] }
-pkcs1 = { version = "0.7.5", features = ["pem"] }
-rsa = "0.9.6"
-rasn = "0.14.0"
-elliptic-curve = "0.13.8"
 p521 = { version = "0.13.3", features = ["pem"] }
-p384 = "0.13.0"
-p256 = "0.13.2"
-bign256 = "0.13.1"
-k256 = "0.13.3"
-p192 = "0.13.0"
-p224 = "0.13.2"
-sm2 = "0.13.3"
-pkcs8 = "0.10.2"
 axum = "0.7.5"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-rand_chacha = "0.3.1"
 tower = "0.4.13"
-axum-macros = "0.4.1"
 serde = { version = "1.0.198", features = ["derive"] }
 const-oid = "0.9.6"
-spki = "0.7.3"
-base64ct = "1.6.0"
 sha2 = "0.10.8"
 chrono = { version = "0.4.38", features = ["serde"] }
-ecdsa = "0.16.9"
 tracing = "0.1.40"
 rcgen = "0.13.1"
 signal-hook = "0.3.17"
 axum-server = { version = "0.6.0", features = ["rustls", "rustls-pemfile", "tls-rustls", "tokio-rustls"] }
+time = "0.3.36"
+clap = { version = "4.5.4", features = ["derive"] }
+rand_chacha = "0.3.1"

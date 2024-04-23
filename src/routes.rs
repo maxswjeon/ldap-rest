@@ -2,7 +2,6 @@ use axum::{extract, Json};
 use serde::{Deserialize, Serialize};
 
 use chrono::{offset::Utc, DateTime};
-use p521::SecretKey;
 
 pub async fn index() -> Json<StatusResponse> {
     Json(StatusResponse { result: true })

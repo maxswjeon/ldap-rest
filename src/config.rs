@@ -1,8 +1,10 @@
 extern crate rcgen;
 use axum_server::tls_rustls::RustlsConfig;
-use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P384_SHA384};
+use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P384_SHA384};
 
 use std::{fmt::Debug, io, path::PathBuf};
+
+use time::{OffsetDateTime, UtcOffset};
 
 use crate::utils::print_error;
 
@@ -73,12 +75,26 @@ pub async fn load_or_create_cert() -> Result<RustlsConfig, LoadError> {
         }
     };
 
-    let cert_params = match CertificateParams::new(vec!["localhost".to_string()]) {
+    let mut cert_params = match CertificateParams::new(vec!["localhost".to_string()]) {
         Ok(val) => val,
         Err(err) => {
             return Err(LoadError::CreateCertificateParamError(err));
         }
     };
+
+    let mut dn = DistinguishedName::new();
+    dn.push(DnType::OrganizationName, "LDAP-REST Bridge".to_string());
+    dn.push(DnType::CommonName, "localhost".to_string());
+    cert_params.distinguished_name = dn;
+
+    cert_params.not_before = OffsetDateTime::from_unix_timestamp(chrono::Utc::now().timestamp())
+        .unwrap()
+        .to_offset(UtcOffset::UTC);
+    cert_params.not_after = OffsetDateTime::from_unix_timestamp(
+        (chrono::Utc::now() + chrono::Duration::days(365)).timestamp(),
+    )
+    .unwrap()
+    .to_offset(UtcOffset::UTC);
 
     let cert = match cert_params.self_signed(&key_pair) {
         Ok(val) => val,
