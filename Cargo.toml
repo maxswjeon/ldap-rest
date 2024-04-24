@@ -11,7 +11,7 @@ ldap3 = "0.11.3"
 tokio = { version = "1", features = ["full"] }
 mini-redis = "0.4"
 hickory-client = "0.24.0"
-axum = { version = "0.7.5" }
+axum = { version = "0.7.5", features = ["macros"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tower = { version = "0.4.13", features = ["timeout"] }
 serde = { version = "1.0.198", features = ["derive"] }
@@ -28,3 +28,4 @@ erased-serde = "0.4.4"
 anyhow = { version = "1.0.82", features = ["backtrace"] }
 axum-extra = "0.9.3"
 thiserror = "1.0.59"
+futures = "0.3.30"

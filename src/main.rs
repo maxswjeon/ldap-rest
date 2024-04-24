@@ -12,9 +12,8 @@ use std::time::Duration;
 use std::{io, net::SocketAddr};
 
 use axum::error_handling::HandleErrorLayer;
-use axum::extract::rejection::JsonRejection;
 use axum::http::StatusCode;
-use axum::{extract, BoxError};
+use axum::BoxError;
 use axum_server::tls_rustls::RustlsConfig;
 use axum_server::Handle;
 use signal_hook::iterator::SignalsInfo;

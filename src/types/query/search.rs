@@ -1,5 +1,7 @@
 use serde::{Deserialize, Deserializer};
 
+use super::{Command, QueryResult};
+
 #[derive(Debug, Clone)]
 pub struct Scope(ldap3::Scope);
 
@@ -24,4 +26,19 @@ pub struct SearchCommand {
     pub scope: Scope,
     pub filter: String,
     pub attrs: Vec<String>,
+}
+
+impl Command for SearchCommand {
+    async fn execute(
+        &self,
+        ldap: &mut ldap3::Ldap,
+    ) -> Result<Option<QueryResult>, ldap3::LdapError> {
+        match ldap
+            .search(&self.base, self.scope.0, &self.filter, self.attrs.clone())
+            .await
+        {
+            Ok(val) => Ok(Some(QueryResult::Search(val.into()))),
+            Err(e) => Err(e),
+        }
+    }
 }

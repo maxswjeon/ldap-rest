@@ -1,19 +1,17 @@
+use super::{Command, QueryResult};
+use ldap3::exop::WhoAmI;
 use serde::Deserialize;
 
-use super::{Command, QueryResult};
-
 #[derive(Debug, Clone, Deserialize)]
-pub struct DeleteCommand {
-    pub dn: String,
-}
+pub struct WhoAmICommand {}
 
-impl Command for DeleteCommand {
+impl Command for WhoAmICommand {
     async fn execute(
         &self,
         ldap: &mut ldap3::Ldap,
     ) -> Result<Option<QueryResult>, ldap3::LdapError> {
-        match ldap.delete(&self.dn).await {
-            Ok(val) => Ok(Some(QueryResult::Common(val.into()))),
+        match ldap.extended::<WhoAmI>(WhoAmI {}).await {
+            Ok(val) => Ok(Some(QueryResult::Extended(val.into()))),
             Err(e) => Err(e),
         }
     }

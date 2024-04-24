@@ -3,12 +3,13 @@ use std::sync::Arc;
 use axum::{extract, http::StatusCode};
 use axum_extra::extract::WithRejection;
 use chrono::{DateTime, Utc};
+use ldap3::LdapConnAsync;
 use serde::{Deserialize, Serialize};
 use ssh_key::{Algorithm, PublicKey, SshSig};
 
 use crate::{
     types::{
-        query::QueryCommand,
+        query::{Command, QueryCommand, QueryResult},
         routes::{ErrorResponse, RejectionError, Response},
     },
     AppState,
@@ -30,15 +31,17 @@ pub struct SignatureData {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct QueryData {
+#[serde(bound(deserialize = "'de: 'a"))]
+pub struct QueryData<'a> {
     pub host: Option<String>,
     pub port: Option<u16>,
-    pub commands: Vec<QueryCommand>,
+    pub commands: Vec<QueryCommand<'a>>,
 }
 
 #[derive(Serialize)]
 struct SuccessResponse {
     result: bool,
+    data: String,
 }
 
 pub async fn post(
@@ -95,8 +98,18 @@ pub async fn post(
         };
     }
 
-    let authorized_keys = match state.authorized_keys.lock() {
-        Ok(val) => val,
+    match state.authorized_keys.lock() {
+        Ok(val) => {
+            if !val.iter().any(|entry| *entry.public_key() == public_key) {
+                return Response {
+                    status: StatusCode::UNAUTHORIZED,
+                    body: Box::new(ErrorResponse {
+                        result: false,
+                        message: "Unauthorized".to_string(),
+                    }),
+                };
+            }
+        }
         Err(_) => {
             tracing::error!("Failed to acquire lock on authorized keys");
             return Response {
@@ -108,19 +121,6 @@ pub async fn post(
             };
         }
     };
-
-    if !authorized_keys
-        .iter()
-        .any(|entry| *entry.public_key() == public_key)
-    {
-        return Response {
-            status: StatusCode::UNAUTHORIZED,
-            body: Box::new(ErrorResponse {
-                result: false,
-                message: "Unauthorized".to_string(),
-            }),
-        };
-    }
 
     let padded_signature = format!(
         "-----BEGIN SSH SIGNATURE-----\n{}\n-----END SSH SIGNATURE-----",
@@ -172,7 +172,7 @@ pub async fn post(
         }
     };
 
-    let queries = match serde_json::from_str::<Vec<QueryRequest>>(&payload.data) {
+    let query = match serde_json::from_str::<QueryData>(&payload.data) {
         Ok(val) => val,
         Err(err) => {
             return Response {
@@ -185,8 +185,62 @@ pub async fn post(
         }
     };
 
+    let host = query.host.unwrap_or("localhost".to_string());
+    let port = query.port.unwrap_or(389);
+    let url = format!("ldap://{}:{}", host, port);
+
+    let (conn, mut ldap) = match LdapConnAsync::new(url.as_str()).await {
+        Ok(val) => val,
+        Err(err) => {
+            return Response {
+                status: StatusCode::BAD_GATEWAY,
+                body: Box::new(ErrorResponse {
+                    result: false,
+                    message: format!("Failed to connect to LDAP server: {:?}", err),
+                }),
+            };
+        }
+    };
+    ldap3::drive!(conn);
+
+    let mut result = Vec::<Option<QueryResult>>::with_capacity(query.commands.len());
+    for command in query.commands.iter() {
+        let res = match command.execute(&mut ldap).await {
+            Ok(value) => value,
+            Err(err) => {
+                return Response {
+                    status: StatusCode::PARTIAL_CONTENT,
+                    body: Box::new(ErrorResponse {
+                        result: false,
+                        message: format!("Failed to execute command: {:?}", err),
+                    }),
+                };
+            }
+        };
+        result.push(match res {
+            Some(val) => Some(val),
+            None => None,
+        });
+    }
+
+    let result_str = match serde_json::to_string(&result) {
+        Ok(val) => val,
+        Err(err) => {
+            return Response {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                body: Box::new(ErrorResponse {
+                    result: false,
+                    message: format!("Failed to serialize response: {:?}", err),
+                }),
+            };
+        }
+    };
+
     Response {
         status: StatusCode::OK,
-        body: Box::new(SuccessResponse { result: true }),
+        body: Box::new(SuccessResponse {
+            result: true,
+            data: result_str,
+        }),
     }
 }
