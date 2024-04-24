@@ -8,7 +8,7 @@ use time::{OffsetDateTime, UtcOffset};
 
 use crate::utils::print_error;
 
-pub enum LoadError {
+pub enum LoadCertError {
     FileLoadError(io::Error),
     CreateKeyPairError(rcgen::Error),
     CreateCertificateParamError(rcgen::Error),
@@ -16,27 +16,29 @@ pub enum LoadError {
     CreateRustlsConfigError(io::Error),
 }
 
-impl Debug for LoadError {
+impl Debug for LoadCertError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LoadError::FileLoadError(err) => {
+            LoadCertError::FileLoadError(err) => {
                 print_error(f, "Failed to load certificate and key file", err)
             }
-            LoadError::CreateKeyPairError(err) => print_error(f, "Failed to create key pair", err),
-            LoadError::CreateCertificateParamError(err) => {
+            LoadCertError::CreateKeyPairError(err) => {
+                print_error(f, "Failed to create key pair", err)
+            }
+            LoadCertError::CreateCertificateParamError(err) => {
                 print_error(f, "Failed to create certificate params", err)
             }
-            LoadError::CreateCertificateError(err) => {
+            LoadCertError::CreateCertificateError(err) => {
                 print_error(f, "Failed to create certificate", err)
             }
-            LoadError::CreateRustlsConfigError(err) => {
+            LoadCertError::CreateRustlsConfigError(err) => {
                 print_error(f, "Failed to create RustlsConfig", err)
             }
         }
     }
 }
 
-pub async fn load_or_create_cert() -> Result<RustlsConfig, LoadError> {
+pub async fn load_or_create_cert() -> Result<RustlsConfig, LoadCertError> {
     let cert_path = match dotenv::var("CERT_PATH") {
         Ok(val) => Some(val),
         Err(_) => {
@@ -62,7 +64,7 @@ pub async fn load_or_create_cert() -> Result<RustlsConfig, LoadError> {
         {
             Ok(val) => val,
             Err(err) => {
-                return Err(LoadError::FileLoadError(err));
+                return Err(LoadCertError::FileLoadError(err));
             }
         };
         return Ok(config);
@@ -71,14 +73,14 @@ pub async fn load_or_create_cert() -> Result<RustlsConfig, LoadError> {
     let key_pair = match KeyPair::generate_for(&PKCS_ECDSA_P384_SHA384) {
         Ok(val) => val,
         Err(err) => {
-            return Err(LoadError::CreateKeyPairError(err));
+            return Err(LoadCertError::CreateKeyPairError(err));
         }
     };
 
     let mut cert_params = match CertificateParams::new(vec!["localhost".to_string()]) {
         Ok(val) => val,
         Err(err) => {
-            return Err(LoadError::CreateCertificateParamError(err));
+            return Err(LoadCertError::CreateCertificateParamError(err));
         }
     };
 
@@ -99,7 +101,7 @@ pub async fn load_or_create_cert() -> Result<RustlsConfig, LoadError> {
     let cert = match cert_params.self_signed(&key_pair) {
         Ok(val) => val,
         Err(err) => {
-            return Err(LoadError::CreateCertificateError(err));
+            return Err(LoadCertError::CreateCertificateError(err));
         }
     };
 
@@ -113,7 +115,7 @@ pub async fn load_or_create_cert() -> Result<RustlsConfig, LoadError> {
     {
         Ok(val) => val,
         Err(err) => {
-            return Err(LoadError::CreateRustlsConfigError(err));
+            return Err(LoadCertError::CreateRustlsConfigError(err));
         }
     };
 

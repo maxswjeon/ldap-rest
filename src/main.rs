@@ -1,42 +1,47 @@
 mod config;
 mod routes;
+mod types;
 mod utils;
 
 extern crate dotenv;
 
 use std::net::AddrParseError;
 use std::process::exit;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use std::{io, net::SocketAddr};
 
+use axum::error_handling::HandleErrorLayer;
+use axum::extract::rejection::JsonRejection;
+use axum::http::StatusCode;
+use axum::{extract, BoxError};
 use axum_server::tls_rustls::RustlsConfig;
 use axum_server::Handle;
-use clap::{Parser, Subcommand};
-use p521::SecretKey;
-use rand_chacha::rand_core::SeedableRng;
-use rand_chacha::ChaCha20Rng;
 use signal_hook::iterator::SignalsInfo;
 use signal_hook::{
     consts::{SIGHUP, SIGUSR2},
     iterator::Signals,
 };
 
+use ssh_key::authorized_keys::Entry;
+use ssh_key::AuthorizedKeys;
+use tower::ServiceBuilder;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use axum::{
     routing::{get, post},
     Router,
 };
+use types::routes::Response;
 
 enum Error {
     Start(StartError),
-    Generate(GenerateError),
 }
 
 impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::Start(err) => write!(f, "{:?}", err),
-            Error::Generate(err) => write!(f, "{:?}", err),
         }
     }
 }
@@ -44,7 +49,8 @@ impl std::fmt::Debug for Error {
 enum StartError {
     CreateSignalHandlerError(io::Error),
     AddressParseError(AddrParseError),
-    CertificateError(config::LoadError),
+    CertificateError(config::LoadCertError),
+    AuthorizedKeysError(ssh_key::Error),
     ServerError(io::Error),
 }
 
@@ -57,6 +63,9 @@ impl std::fmt::Debug for StartError {
             StartError::CertificateError(err) => {
                 utils::print_error(f, "Failed to load or create certificate, exiting.", err)
             }
+            StartError::AuthorizedKeysError(err) => {
+                utils::print_error(f, "Failed to load authorized keys, exiting.", err)
+            }
             StartError::AddressParseError(err) => {
                 utils::print_error(f, "Failed to parse address, exiting.", err)
             }
@@ -65,45 +74,6 @@ impl std::fmt::Debug for StartError {
             }
         }
     }
-}
-
-enum GenerateError {
-    KeyPairError(config::LoadError),
-    CertificateParamError(config::LoadError),
-    CertificateError(config::LoadError),
-}
-
-impl std::fmt::Debug for GenerateError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GenerateError::KeyPairError(err) => {
-                utils::print_error(f, "Failed to generate key pair, exiting.", err)
-            }
-            GenerateError::CertificateParamError(err) => {
-                utils::print_error(f, "Failed to generate certificate params, exiting.", err)
-            }
-            GenerateError::CertificateError(err) => {
-                utils::print_error(f, "Failed to generate certificate, exiting.", err)
-            }
-        }
-    }
-}
-
-#[derive(Parser, Debug)]
-#[command(
-    version,
-    about = "LDAP - REST Bridge",
-    long_about = "Secure LDAP client that exposes a REST API"
-)]
-struct Arguments {
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
-
-#[derive(Subcommand, Debug)]
-enum Commands {
-    Start,
-    Genkey { name: String, force: Option<bool> },
 }
 
 #[tokio::main]
@@ -118,18 +88,7 @@ async fn main() -> Result<(), ()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let args = Arguments::parse();
-
-    let command = match args.command {
-        Some(val) => val,
-        None => Commands::Start,
-    };
-
-    let res = match command {
-        Commands::Start => start().await,
-        Commands::Genkey { name, force } => genkey(name, force.unwrap_or_else(|| false)).await,
-    };
-
+    let res = start().await;
     match res {
         Ok(_) => Ok(()),
         Err(err) => {
@@ -139,12 +98,8 @@ async fn main() -> Result<(), ()> {
     }
 }
 
-async fn genkey(name: String, force: bool) -> Result<(), Error> {
-    let mut rng = ChaCha20Rng::from_entropy();
-    let key_secret = SecretKey::random(&mut rng);
-    let key_public = key_secret.public_key();
-
-    Ok(())
+struct AppState {
+    authorized_keys: Mutex<Vec<Entry>>,
 }
 
 async fn start() -> Result<(), Error> {
@@ -164,9 +119,28 @@ async fn start() -> Result<(), Error> {
         }
     };
 
+    let authorized_keys_path =
+        dotenv::var("AUTHORIZED_KEYS_PATH").unwrap_or_else(|_| "authorized_keys".to_string());
+    let keys = match AuthorizedKeys::read_file(authorized_keys_path) {
+        Ok(val) => val,
+        Err(err) => {
+            return Err(Error::Start(StartError::AuthorizedKeysError(err)));
+        }
+    };
+
+    let state = Arc::new(AppState {
+        authorized_keys: Mutex::new(keys),
+    });
+
     let app = Router::new()
-        .route("/", get(routes::index))
-        .route("/request", post(routes::request));
+        .route("/", get(routes::index::get))
+        .route("/query", post(routes::query::post))
+        .with_state(state.clone())
+        .layer(
+            ServiceBuilder::new()
+                .layer(HandleErrorLayer::new(handle_error))
+                .timeout(Duration::from_secs(10)),
+        );
 
     let handle = Handle::new();
 
@@ -185,7 +159,7 @@ async fn start() -> Result<(), Error> {
             }
         };
 
-    tokio::spawn(signal_reload(signals_reload, conf.clone()));
+    tokio::spawn(signal_reload(signals_reload, conf.clone(), state));
     tokio::spawn(signal_shutdown(signals_shutdown, handle.clone()));
 
     let server = axum_server::bind_rustls(addr, conf);
@@ -197,9 +171,34 @@ async fn start() -> Result<(), Error> {
     }
 }
 
-async fn signal_reload(mut signals: SignalsInfo, config: RustlsConfig) {
+async fn signal_reload(mut signals: SignalsInfo, config: RustlsConfig, state: Arc<AppState>) {
     for sig in signals.forever() {
         tracing::info!("Received signal {:?}", sig);
+
+        tracing::info!("Reloading authorized keys");
+        let authorized_keys_path =
+            dotenv::var("AUTHORIZED_KEYS_PATH").unwrap_or_else(|_| "authorized_keys".to_string());
+        let keys = match AuthorizedKeys::read_file(authorized_keys_path) {
+            Ok(val) => Some(val),
+            Err(err) => {
+                tracing::error!("Failed to reload authorized keys: {:?}", err);
+                None
+            }
+        };
+        if keys.is_some() {
+            let mut val = match state.authorized_keys.try_lock() {
+                Ok(val) => val,
+                Err(_) => {
+                    tracing::error!("Failed to acquire lock on authorized keys");
+                    continue;
+                }
+            };
+
+            val.clear();
+            val.extend(keys.unwrap());
+            tracing::info!("Authorized keys reloaded");
+        }
+
         tracing::info!("Reloading certificates");
         match config::load_or_create_cert().await {
             Ok(val) => {
@@ -219,5 +218,25 @@ async fn signal_shutdown(mut signals: SignalsInfo, handle: Handle) {
         tracing::info!("Shutting down server");
         handle.shutdown();
         exit(0)
+    }
+}
+
+async fn handle_error(err: BoxError) -> Response {
+    if err.is::<tower::timeout::error::Elapsed>() {
+        Response {
+            status: StatusCode::REQUEST_TIMEOUT,
+            body: Box::new(types::routes::ErrorResponse {
+                result: false,
+                message: "Request timed out".to_string(),
+            }),
+        }
+    } else {
+        Response {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            body: Box::new(types::routes::ErrorResponse {
+                result: false,
+                message: "Internal server error".to_string(),
+            }),
+        }
     }
 }
