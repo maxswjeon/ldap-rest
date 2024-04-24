@@ -2,11 +2,11 @@
 
 ## Endpoints
 
-- `/public`  
-This endpoint prints out public key in PEM format to encrypt the request payload.  
+- GET `/`  
+  This endpoint will response a successful JSON response on healthy state.
 
-- `/req`  
-This endpoint accepts request
+- POST `/query`  
+  This endpoint accepts query requests
 
 ## Payload
 
