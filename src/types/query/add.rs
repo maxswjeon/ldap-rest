@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
-use ldap3::{Ldap, LdapError};
-use serde::Deserialize;
+use ldap3_serde::{Ldap, LdapError};
+use serde::{Deserialize, Serialize};
 
 use super::{Command, QueryResult};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddCommand {
     pub dn: String,
     pub attrs: Vec<(String, HashSet<String>)>,

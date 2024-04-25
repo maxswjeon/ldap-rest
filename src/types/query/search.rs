@@ -1,28 +1,21 @@
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Serialize};
+
+use ldap3_serde::{LdapError, Scope};
 
 use super::{Command, QueryResult};
 
-#[derive(Debug, Clone)]
-pub struct Scope(ldap3::Scope);
-
-impl<'de> Deserialize<'de> for Scope {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Scope, D::Error> {
-        let value = String::deserialize(deserializer)?;
-        match value.as_str() {
-            "base" => Ok(Scope(ldap3::Scope::Base)),
-            "one" => Ok(Scope(ldap3::Scope::OneLevel)),
-            "sub" => Ok(Scope(ldap3::Scope::Subtree)),
-            "0" => Ok(Scope(ldap3::Scope::Base)),
-            "1" => Ok(Scope(ldap3::Scope::OneLevel)),
-            "2" => Ok(Scope(ldap3::Scope::Subtree)),
-            _ => Err(serde::de::Error::custom("invalid scope")),
-        }
-    }
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "Scope")]
+pub enum ScopeDef {
+    Base = 0,
+    OneLevel = 1,
+    Subtree = 2,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SearchCommand {
     pub base: String,
+    #[serde(with = "ScopeDef")]
     pub scope: Scope,
     pub filter: String,
     pub attrs: Vec<String>,
@@ -31,10 +24,10 @@ pub struct SearchCommand {
 impl Command for SearchCommand {
     async fn execute(
         &self,
-        ldap: &mut ldap3::Ldap,
-    ) -> Result<Option<QueryResult>, ldap3::LdapError> {
+        ldap: &mut ldap3_serde::Ldap,
+    ) -> Result<Option<QueryResult>, LdapError> {
         match ldap
-            .search(&self.base, self.scope.0, &self.filter, self.attrs.clone())
+            .search(&self.base, self.scope, &self.filter, self.attrs.clone())
             .await
         {
             Ok(val) => Ok(Some(QueryResult::Search(val.into()))),

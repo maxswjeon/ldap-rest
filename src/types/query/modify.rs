@@ -38,18 +38,18 @@ pub struct IncrementMod {
     pub value: String,
 }
 
-impl Into<ldap3::Mod<String>> for Mod {
-    fn into(self) -> ldap3::Mod<String> {
+impl Into<ldap3_serde::Mod<String>> for Mod {
+    fn into(self) -> ldap3_serde::Mod<String> {
         match self {
-            Mod::Add(add) => ldap3::Mod::Add(add.attr, add.values.into_iter().collect()),
+            Mod::Add(add) => ldap3_serde::Mod::Add(add.attr, add.values.into_iter().collect()),
             Mod::Delete(delete) => {
-                ldap3::Mod::Delete(delete.attr, delete.values.into_iter().collect())
+                ldap3_serde::Mod::Delete(delete.attr, delete.values.into_iter().collect())
             }
             Mod::Replace(replace) => {
-                ldap3::Mod::Replace(replace.attr, replace.values.into_iter().collect())
+                ldap3_serde::Mod::Replace(replace.attr, replace.values.into_iter().collect())
             }
             Mod::Increment(increment) => {
-                ldap3::Mod::Increment(increment.attr, increment.value.parse().unwrap())
+                ldap3_serde::Mod::Increment(increment.attr, increment.value.parse().unwrap())
             }
         }
     }
@@ -72,8 +72,8 @@ pub struct ModifyDnCommand {
 impl Command for ModifyCommand {
     async fn execute(
         &self,
-        ldap: &mut ldap3::Ldap,
-    ) -> Result<Option<QueryResult>, ldap3::LdapError> {
+        ldap: &mut ldap3_serde::Ldap,
+    ) -> Result<Option<QueryResult>, ldap3_serde::LdapError> {
         match ldap
             .modify(
                 &self.dn,
@@ -90,8 +90,8 @@ impl Command for ModifyCommand {
 impl Command for ModifyDnCommand {
     async fn execute(
         &self,
-        ldap: &mut ldap3::Ldap,
-    ) -> Result<Option<QueryResult>, ldap3::LdapError> {
+        ldap: &mut ldap3_serde::Ldap,
+    ) -> Result<Option<QueryResult>, ldap3_serde::LdapError> {
         match ldap
             .modifydn(
                 &self.dn,

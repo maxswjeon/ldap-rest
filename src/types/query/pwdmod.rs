@@ -1,4 +1,4 @@
-use ldap3::exop::PasswordModify;
+use ldap3_serde::exop::PasswordModify;
 use serde::Deserialize;
 
 use super::{Command, QueryResult};
@@ -23,8 +23,8 @@ impl<'a> Into<PasswordModify<'a>> for PasswordModifyCommand<'a> {
 impl<'a> Command for PasswordModifyCommand<'a> {
     async fn execute(
         &self,
-        ldap: &mut ldap3::Ldap,
-    ) -> Result<Option<QueryResult>, ldap3::LdapError> {
+        ldap: &mut ldap3_serde::Ldap,
+    ) -> Result<Option<QueryResult>, ldap3_serde::LdapError> {
         match ldap.extended::<PasswordModify>(self.clone().into()).await {
             Ok(val) => Ok(Some(QueryResult::Extended(val.into()))),
             Err(e) => Err(e),

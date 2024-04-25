@@ -1,9 +1,9 @@
-use ldap3::{Ldap, LdapError};
-use serde::Deserialize;
+use ldap3_serde::{Ldap, LdapError};
+use serde::{Deserialize, Serialize};
 
 use super::{Command, QueryResult};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BindCommand {
     pub dn: String,
     pub pw: String,
@@ -18,7 +18,7 @@ impl Command for BindCommand {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnbindCommand {}
 
 impl Command for UnbindCommand {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{extract, http::StatusCode};
 use axum_extra::extract::WithRejection;
 use chrono::{DateTime, Utc};
-use ldap3::LdapConnAsync;
+use ldap3_serde::LdapConnAsync;
 use serde::{Deserialize, Serialize};
 use ssh_key::{Algorithm, PublicKey, SshSig};
 
@@ -201,7 +201,7 @@ pub async fn post(
             };
         }
     };
-    ldap3::drive!(conn);
+    ldap3_serde::drive!(conn);
 
     let mut result = Vec::<Option<QueryResult>>::with_capacity(query.commands.len());
     for command in query.commands.iter() {
